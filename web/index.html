@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- AIDEV-NOTE: connect-src is the privacy boundary. Decrypted notes must never be able to leave the page. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src https://cdn.jsdelivr.net; img-src 'self' blob: data:; media-src blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>notedump</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='6' y='4' width='20' height='24' rx='3' fill='%231c2733'/><rect x='10' y='12' width='12' height='4' fill='%23ffe45c'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;600;700&family=Literata:opsz,wght@7..72,400;7..72,600&display=swap">
+<style>
+:root {
+  color-scheme: light;
+  --paper: #eef1f4;
+  --surface: #f8f9fb;
+  --ink: #1c2733;
+  --muted: #5b6877;
+  --rule: #cdd5de;
+  --accent: #2d5ba3;
+  --hl: #ffe45c;
+  --hl-ink: #1c2733;
+  --sel: #dde5f0;
+  --ui: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --read: "Literata", Georgia, "Times New Roman", serif;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #12171d;
+    --surface: #1a2129;
+    --ink: #e2e8ef;
+    --muted: #93a0af;
+    --rule: #2b3540;
+    --accent: #8ab0f0;
+    --hl: #d9be2e;
+    --hl-ink: #12171d;
+    --sel: #233041;
+  }
+}
+*, *::before, *::after { box-sizing: inherit; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.45 var(--ui);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:disabled { opacity: 0.5; cursor: progress; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.error, #load-error, #query-error { color: #b3261e; }
+@media (prefers-color-scheme: dark) { .error, #load-error, #query-error { color: #ffb4ab; } }
+
+/* The one loud thing: search hits look highlighter-marked. */
+mark {
+  color: var(--hl-ink);
+  background: linear-gradient(100deg, transparent 2%, var(--hl) 6%, var(--hl) 94%, transparent 98%);
+  padding: 0 0.12em;
+  margin: 0 -0.12em;
+  border-radius: 0.2em 0.35em 0.25em 0.4em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* ---------- load / unlock ---------- */
+#loader {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.25rem;
+}
+.load-card { width: min(34rem, 100%); }
+.load-card h1 {
+  font: 700 2.4rem/1.05 var(--ui);
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
+}
+.load-card h1 span {
+  background: linear-gradient(100deg, transparent 2%, var(--hl) 6%, var(--hl) 94%, transparent 98%);
+  color: var(--hl-ink);
+  padding: 0 0.15em;
+}
+.load-card > p { color: var(--muted); margin: 0 0 1.5rem; max-width: 30rem; }
+#drop {
+  border: 2px dashed var(--rule);
+  border-radius: 10px;
+  padding: 1.5rem;
+  background: var(--surface);
+  display: grid;
+  gap: 0.75rem;
+}
+#drop.over { border-color: var(--accent); }
+#drop strong { font-size: 1.1rem; }
+.pickers { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pickers label {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  background: var(--paper);
+}
+.pickers label:focus-within { outline: 2px solid var(--accent); }
+.pickers input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+#load-summary { color: var(--muted); font-size: 0.9rem; }
+#unlock-form { margin-top: 1.25rem; display: grid; gap: 0.5rem; }
+#unlock-form .row { display: flex; gap: 0.5rem; }
+#pass {
+  flex: 1;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+}
+#unlock-btn { background: var(--ink); color: var(--paper); border-color: var(--ink); padding: 0.55rem 1rem; }
+#unlock-status { min-height: 1.4em; color: var(--muted); font-size: 0.9rem; margin: 0; }
+.fine { font-size: 0.85rem; color: var(--muted); margin-top: 2rem; }
+
+/* ---------- app layout ---------- */
+#app { height: 100%; display: none; grid-template-columns: 15rem 22rem 1fr; }
+body[data-view="app"] #app { display: grid; }
+body[data-view="app"] #loader { display: none; }
+
+#rail {
+  border-right: 1px solid var(--rule);
+  overflow-y: auto;
+  padding: 1rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+#rail h2 { font-size: 0.9rem; font-weight: 600; color: var(--muted); margin: 0 0 0.35rem 0.4rem; }
+#rail ul { list-style: none; margin: 0; padding: 0; }
+#folders button {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.25rem 0.4rem 0.25rem calc(0.4rem + var(--depth, 0) * 0.9rem);
+  border-radius: 5px;
+  cursor: pointer;
+}
+#folders button:hover { background: var(--sel); }
+#folders button:focus-visible { outline: 2px solid var(--accent); }
+.n { color: var(--muted); font-size: 0.85rem; margin-left: 0.5rem; }
+#tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.chip { border-radius: 999px; padding: 0.1rem 0.55rem; font-size: 0.85rem; }
+.rail-foot { margin-top: auto; display: grid; gap: 0.5rem; }
+
+#middle { border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+.searchbar { padding: 0.75rem; border-bottom: 1px solid var(--rule); display: grid; gap: 0.5rem; }
+#q {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  font-size: 1.05rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.searchbar .row { display: flex; align-items: center; gap: 0.5rem; justify-content: space-between; }
+#count { color: var(--muted); font-size: 0.85rem; }
+#sort { border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); padding: 0.2rem 0.3rem; font-size: 0.85rem; }
+#list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+#list li { padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--rule); cursor: pointer; }
+#list li:hover { background: var(--surface); }
+#list li[aria-selected="true"] { background: var(--sel); box-shadow: inset 3px 0 0 var(--accent); }
+#list li.empty { cursor: default; color: var(--muted); }
+.row-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pin { color: var(--accent); font-weight: 400; font-size: 0.8rem; }
+.row-meta { color: var(--muted); font-size: 0.8rem; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.row-snippet {
+  font-size: 0.9rem;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 0.15rem;
+}
+.row-snippet mark, .row-title mark { color: var(--hl-ink); }
+
+#reader { overflow-y: auto; min-width: 0; background: var(--surface); }
+.reader-bar {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.6rem 1.5rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+#back { display: none; }
+.reader-bar .spacer { flex: 1; }
+article { max-width: 42rem; padding: 2rem 1.5rem 4rem; margin: 0 auto; }
+#reader-title { font: 600 1.9rem/1.2 var(--read); margin: 0 0 0.5rem; }
+#reader-meta { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; align-items: center; color: var(--muted); font-size: 0.9rem; margin-bottom: 1.75rem; }
+#reader-body { font: 1.08rem/1.7 var(--read); overflow-wrap: anywhere; }
+#reader-body > h1:first-child { display: none; } /* title already shown above */
+#reader-body h1, #reader-body h2, #reader-body h3 { font-family: var(--read); line-height: 1.25; margin: 1.6em 0 0.5em; }
+#reader-body h2 { font-size: 1.35rem; }
+#reader-body h3 { font-size: 1.15rem; }
+#reader-body img { max-width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--rule); }
+#reader-body pre { background: var(--paper); padding: 0.8rem 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.9rem; line-height: 1.5; }
+#reader-body code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; }
+#reader-body blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid var(--rule); color: var(--muted); }
+#reader-body ul:has(input[type="checkbox"]) { list-style: none; padding-left: 0.2rem; }
+#reader-body a { color: var(--accent); }
+#reader-body table { border-collapse: collapse; }
+.att-missing { font: 0.9rem/1.4 var(--ui); color: var(--muted); border: 1px dashed var(--rule); padding: 0.6rem 0.8rem; border-radius: 6px; }
+#reader-atts { margin-top: 2.5rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
+#reader-atts h3 { font-size: 1rem; margin: 0 0 0.5rem; }
+#reader-atts ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.4rem; }
+#reader-atts li { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+#reader-atts li button { margin-left: auto; font-size: 0.85rem; }
+.reader-empty { color: var(--muted); padding: 4rem 1.5rem; text-align: center; }
+body:not([data-pane="reader"]) #reader-content { display: none; }
+body[data-pane="reader"] .reader-empty { display: none; }
+
+details.console { border-top: 1px solid var(--rule); padding-top: 0.75rem; }
+details.console summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; }
+#sql { width: 100%; min-height: 6rem; font: 0.85rem/1.4 ui-monospace, Menlo, monospace; margin-top: 0.5rem; padding: 0.5rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
+#sql-out .scroll { overflow-x: auto; max-height: 40vh; }
+#sql-out table { border-collapse: collapse; font-size: 0.8rem; }
+#sql-out th, #sql-out td { border: 1px solid var(--rule); padding: 0.2rem 0.4rem; text-align: left; vertical-align: top; max-width: 20rem; }
+
+.help { font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+.help code { font-size: 0.78rem; }
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  z-index: 10;
+}
+
+/* ---------- narrow screens ---------- */
+@media (max-width: 1100px) {
+  #app { grid-template-columns: 19rem 1fr; }
+  #rail { display: none; }
+  #rail.open { display: flex; position: fixed; inset: 0 auto 0 0; width: 17rem; z-index: 5; background: var(--paper); box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.35); padding-top: calc(1rem + env(safe-area-inset-top, 0px)); }
+  #menu { display: inline-block; }
+}
+@media (min-width: 1101px) { #menu { display: none; } }
+@media (max-width: 720px) {
+  #app { grid-template-columns: 1fr; }
+  body[data-pane="reader"] #middle { display: none; }
+  body:not([data-pane="reader"]) #reader { display: none; }
+  #back { display: inline-block; }
+  .reader-bar { padding: 0.5rem 1rem; }
+  article { padding: 1.25rem 1rem 3rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body data-view="load" data-pane="list">
+
+<main id="loader">
+  <div class="load-card">
+    <h1>Your notes, <span>searchable</span>.</h1>
+    <p>Open a notedump export. Files are decrypted in this tab only. Nothing is uploaded.</p>
+    <div id="drop">
+      <strong>Drop the export folder here</strong>
+      <div class="pickers">
+        <label id="pick-folder-label">Choose folder<input id="pick-folder" type="file" webkitdirectory multiple></label>
+        <label>Choose files<input id="pick-files" type="file" multiple></label>
+      </div>
+      <div id="load-summary"></div>
+      <div id="load-error" role="alert"></div>
+    </div>
+    <form id="unlock-form" hidden autocomplete="off">
+      <label for="pass">Passphrase</label>
+      <div class="row">
+        <input id="pass" type="password" autocomplete="current-password" required>
+        <button id="unlock-btn" type="submit">Unlock</button>
+      </div>
+      <p id="unlock-status" role="status"></p>
+    </form>
+    <p class="fine">On iPhone, use Choose files and select <code>notedump.json</code>, <code>notes.arrows.gz.enc</code> and <code>attachments.arrows.gz.enc</code>. Add files from <code>files/</code> to see attachments.</p>
+  </div>
+</main>
+
+<div id="app">
+  <aside id="rail" aria-label="Folders and tags">
+    <section>
+      <h2>Folders</h2>
+      <ul id="folders"></ul>
+    </section>
+    <section id="tags-box">
+      <h2>Tags</h2>
+      <ul id="tags"></ul>
+    </section>
+    <div class="rail-foot">
+      <p class="help">
+        <code>"exact phrase"</code> <code>-word</code> <code>tag:x</code> <code>folder:"A/B"</code>
+        <code>is:pinned</code> <code>is:deleted</code> <code>has:image</code> <code>has:attachment</code>
+        <code>after:2024-01-01</code> <code>before:2024-12-31</code><br>
+        Keys: <kbd>/</kbd> search, <kbd>j</kbd> <kbd>k</kbd> move, <kbd>Esc</kbd> back
+      </p>
+      <details class="console">
+        <summary>SQL console</summary>
+        <form id="sql-form">
+          <textarea id="sql" spellcheck="false">SELECT folder, count(*) AS notes, max(modified) AS last_edit
+FROM notes GROUP BY folder ORDER BY notes DESC</textarea>
+          <button type="submit">Run</button>
+        </form>
+        <div id="sql-out"></div>
+      </details>
+      <button id="lock" hidden>Lock</button>
+    </div>
+  </aside>
+
+  <section id="middle" aria-label="Search results">
+    <div class="searchbar">
+      <input id="q" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" spellcheck="false">
+      <div class="row">
+        <button id="menu" type="button">Folders</button>
+        <span id="count"></span>
+        <select id="sort" aria-label="Sort"></select>
+      </div>
+      <div id="query-error" role="alert"></div>
+    </div>
+    <ul id="list" role="listbox" aria-label="Notes"></ul>
+    <div class="searchbar"><button id="export-results">Export results as Markdown (.zip)</button></div>
+  </section>
+
+  <section id="reader" aria-label="Note">
+    <p class="reader-empty">Pick a note to read it.</p>
+    <div id="reader-content">
+      <div class="reader-bar">
+        <button id="back" type="button">Back</button>
+        <span class="spacer"></span>
+        <button id="copy-md" type="button">Copy Markdown</button>
+        <button id="dl-md" type="button">Download .md</button>
+        <button id="dl-zip" type="button">Download .zip with attachments</button>
+      </div>
+      <article>
+        <h1 id="reader-title"></h1>
+        <div id="reader-meta"></div>
+        <div id="reader-body"></div>
+        <section id="reader-atts" hidden></section>
+      </article>
+    </div>
+  </section>
+</div>
+
+<div id="toast" role="status" hidden></div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

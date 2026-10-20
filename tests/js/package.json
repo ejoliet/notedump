@@ -1,0 +1,11 @@
+{
+  "name": "notedump-web-tests",
+  "private": true,
+  "type": "module",
+  "description": "Runs the viewer's crypto and SQL against a real export in Node with DuckDB-WASM",
+  "devDependencies": {
+    "@duckdb/duckdb-wasm": "1.32.0",
+    "apache-arrow": "17.0.0",
+    "web-worker": "1.3.0"
+  }
+}
